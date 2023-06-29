@@ -1,0 +1,10 @@
+conf t
+int {{interface}}
+{#
+{% for line in matches -%}
+  no {{line}}
+{% endfor -%}
+#}
+switchport port-security mac-address sticky
+switchport port-security
+end
