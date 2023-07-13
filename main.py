@@ -74,14 +74,15 @@ class Switch:
             'cisco_catalyst': 'shr_cat.j2',
         }
         CONFIGURE_COMMANDS = {
-            'cisco_catalyst': 'portlock_cat.j2',
+            'cisco_catalyst': ['portlock_update_cat.j2','portlock_clean_cat.j2'],
         }
 
         if self.model_family in CHECK_COMMANDS:
             check_template = self.env.get_template(
                 CHECK_COMMANDS[self.model_family])
-            config_template = self.env.get_template(
-                CONFIGURE_COMMANDS[self.model_family])
+            config_update_template, config_clean_template = [
+                self.env.get_template(template) for template in CONFIGURE_COMMANDS[self.model_family]
+            ]
             self.ssh.expect(['#', ']'])
             for interface in self.interfaces:
                 if interface.type.value == '1000base-t' and interface.mode.value == 'access':
@@ -89,19 +90,19 @@ class Switch:
                         check_template.render(interface=interface))
                     port_lock_status = self.ssh.expect(
                         ['security mac-address sticky', 'end'])
-                    # if port_lock_status == 0:
-                    #     self.ssh.expect('end')
-                    #     output = self.ssh.before.decode('utf-8')
-                    #     pattern = re.compile(
-                    #         r'(switchport port-security mac-address sticky.*)')
-                    #     matches = pattern.findall(output)
-                    #     # self.port_lock_dict[interface] = matches
-                    #     self.ssh.sendline(
-                    #         config_template.render(interface=interface, matches=matches))
-                    #     self.ssh.expect(['#end'])
+                    if port_lock_status == 0:
+                        self.ssh.expect('end')
+                        output = self.ssh.before.decode('utf-8')
+                        pattern = re.compile(
+                            r'(switchport port-security mac-address sticky .*)')
+                        matches = pattern.findall(output)
+                        # self.port_lock_dict[interface] = matches
+                        self.ssh.sendline(
+                            config_update_template.render(interface=interface, matches=matches))
+                        self.ssh.expect(['#end'])
                     if port_lock_status == 1:
                         self.ssh.sendline(
-                            config_template.render(interface=interface))
+                            config_clean_template.render(interface=interface))
                         self.ssh.expect(['#end'])
 
     def save(self):
@@ -139,7 +140,7 @@ if __name__ == '__main__':
     try:
         NetboxDevice.create_connection()
         netbox_devices = NetboxDevice.get_devices(
-            site_slug='ust', role=NETBOX_DEVICE_ROLE['access-switch'])
+            site_slug='ust', role=NETBOX_DEVICE_ROLE['poe-switch'])
 
         Switch.load_models('models.list')
         Switch.set_login()
