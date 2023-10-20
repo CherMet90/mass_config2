@@ -1,6 +1,8 @@
 import getpass
 import re
 import sys
+import importlib.util
+import os
 
 import jinja2
 import pexpect
@@ -11,11 +13,21 @@ from log import logger
 from prettytable import PrettyTable
 
 
+class ModuleVariables:
+    pass
+
+
+class Family:
+    def __init__(self, name, models_line):
+        self.name = name
+        self.models = list(filter(None, models_line.rstrip().split(',')))
+
+
 class Switch:
     username = None
     password = None
     ssh_options = '-c aes128-cbc,aes128-ctr -oKexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group-exchange-sha256 -oStrictHostKeyChecking=accept-new  -oHostKeyAlgorithms=ssh-rsa,ssh-dss'
-    models = {}  # Dictionary for storing device's models
+    families = []  # list of family objects
     # Объявление окружения Jinja и загрузка шаблонов
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader('./templates'),
@@ -35,16 +47,21 @@ class Switch:
         with open(file_name, 'r') as f:
             for line in f:
                 model_type, models_line = line.split(':')
-                cls.models.update(
-                    {model_type: list(filter(None, models_line.rstrip().split(',')))})
+                family = Family(model_type, models_line)
+                cls.families.append(family)
+
+    def __find_family(self):
+        for family in self.families:
+            for model in family.models:
+                if model == self.model:
+                    return family.name
+        raise Error(
+            f"The model family for {self.model} is not defined.", ip=self.ip_address)
 
     def __init__(self, ip, model):
         self.ip_address = ip
         self.model = model
-
-        for model_family, models in self.models.items():
-            if self.model in models:
-                self.model_family = model_family
+        self.model_family = self.__find_family()
 
         try:
             logger.info(f'Connecting to {self.ip_address}...')
@@ -68,13 +85,16 @@ class Switch:
         if self.model_family == 'cisco_catalyst':
             self.ssh.sendline('terminal length 0')
 
+    # ---------------------------------------------------------------------------------------------------------------
+    #   Deprecated
+    # ---------------------------------------------------------------------------------------------------------------
     def check_conditions(self):
         # Словарь шаблонов устройств
         CHECK_COMMANDS = {
             'cisco_catalyst': 'shr_cat.j2',
         }
         CONFIGURE_COMMANDS = {
-            'cisco_catalyst': ['portlock_update_cat.j2','portlock_clean_cat.j2'],
+            'cisco_catalyst': ['portlock_update_cat.j2', 'portlock_clean_cat.j2'],
         }
 
         if self.model_family in CHECK_COMMANDS:
@@ -104,10 +124,12 @@ class Switch:
                         self.ssh.sendline(
                             config_clean_template.render(interface=interface))
                         self.ssh.expect(['#end'])
-
+    # ---------------------------------------------------------------------------------------------------------------
+    
     def save(self):
         SAVE_COMMANDS = {
             'cisco_catalyst': 'wr',
+            'cisco_sg_350': 'wr',
         }
 
         if self.model_family in SAVE_COMMANDS:
@@ -123,6 +145,7 @@ class Switch:
 
 
 if __name__ == '__main__':
+    cwd = os.getcwd()   # Get the current working directory
     NETBOX_DEVICE_ROLE = {
         'router': 1,
         'ap': 2,
@@ -136,11 +159,16 @@ if __name__ == '__main__':
         'asu-switch': 10,
         'host': 11
     }
+    module_name = input(
+        "Enter module name (with file extension): "
+    )
 
     try:
         NetboxDevice.create_connection()
+        required_role = input("Enter required role ({}): ".format(
+            ", ".join(NETBOX_DEVICE_ROLE.keys())))
         netbox_devices = NetboxDevice.get_devices(
-            site_slug='ust', role=NETBOX_DEVICE_ROLE['poe-switch'])
+            site_slug='ust', role=NETBOX_DEVICE_ROLE[required_role])
 
         Switch.load_models('models.list')
         Switch.set_login()
@@ -149,20 +177,31 @@ if __name__ == '__main__':
         for i in netbox_devices:
             try:
                 netbox_device = NetboxDevice(i)
-                decision = input(
-                    f'{netbox_device.ip_address} will be checked.\nPress any key to continue or "s" to skip...')
 
-                if decision.strip().lower() == "s":
-                    logger.info(
-                        f'Device {netbox_device.ip_address} was skipped')
-                    continue
+                # Раскомментировать в случае если необходимо прерывать цикл перед каждым устройством
+                # decision = input(
+                #     f'\n{netbox_device.ip_address} will be checked.\nPress any key to continue or "s" to skip...'
+                # )
+
+                # if decision.strip().lower() == "s":
+                #     logger.info(
+                #         f'Device {netbox_device.ip_address} was skipped')
+                #     continue
 
                 switch = Switch(netbox_device.ip_address,
                                 netbox_device.role.model)
                 switch.interfaces = netbox_device.get_interfaces()
-                switch.check_conditions()
+
+                # Динамический импорт требуемого модуля
+                spec = importlib.util.spec_from_file_location(
+                    "dyn_module", os.path.join(cwd, "tasks", switch.model_family, module_name))
+                dyn_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(dyn_module)
+                dyn_module.main(switch.ssh)
+
                 switch.save()
                 switch.ssh.close()
+                print('')
                 logger.info(f'The connection closed')
             except Error:
                 continue
