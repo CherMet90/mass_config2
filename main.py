@@ -130,6 +130,7 @@ class Switch:
         SAVE_COMMANDS = {
             'cisco_catalyst': 'wr',
             'cisco_sg_350': 'wr',
+            'cisco_sg_300': 'wr',
         }
 
         if self.model_family in SAVE_COMMANDS:
@@ -143,9 +144,9 @@ class Switch:
                 self.ssh.sendline('y')
                 self.ssh.expect('>')
 
-
 if __name__ == '__main__':
     cwd = os.getcwd()   # Get the current working directory
+    
     NETBOX_DEVICE_ROLE = {
         'router': 1,
         'ap': 2,
@@ -162,42 +163,68 @@ if __name__ == '__main__':
     module_name = input(
         "Enter module name (with file extension): "
     )
-
+    
+    # Глобальная конфигурация скрипта
+    script_configuration = {
+        'searching_by_what': 'hosts',
+        'pause_before_proccessing': False,
+        'use_ip_list': True,
+    }
+    
     try:
+        if script_configuration['use_ip_list']:
+            ### Получение списка ip из файла
+            ips = []
+            with open('ip.list', 'r') as f:
+                for line in f:
+                    ips.append(line.strip())
+            
         NetboxDevice.create_connection()
-        required_role = input("Enter required role ({}): ".format(
-            ", ".join(NETBOX_DEVICE_ROLE.keys())))
-        netbox_devices = NetboxDevice.get_devices(
-            site_slug='ust', role=NETBOX_DEVICE_ROLE[required_role])
+        match script_configuration['searching_by_what']:
+            case 'role':
+                ### Получение списка устройств по роли
+                required_role = input("Enter required role ({}): ".format(
+                    ", ".join(NETBOX_DEVICE_ROLE.keys())))
+                netbox_devices = NetboxDevice.get_devices_by_role(
+                    site_slug='ust', role=NETBOX_DEVICE_ROLE[required_role])
+            case 'hosts':
+                ### Получение списка свичей по ip хостов
+                netbox_devices = NetboxDevice.get_interfaces_by_hosts(ips)
 
         Switch.load_models('models.list')
         Switch.set_login()
         Switch.set_password()
 
-        for i in netbox_devices:
+        ### Запуск цикла если netbox_devices содержит список
+        # for netbox_device in netbox_devices:
+        ### Запуск цикла если netbox_devices содержит словарь
+        for key, value in netbox_devices.items():
             try:
-                netbox_device = NetboxDevice(i)
+                netbox_device = NetboxDevice(key)
+                host_interface = value
 
-                # Раскомментировать в случае если необходимо прерывать цикл перед каждым устройством
-                # decision = input(
-                #     f'\n{netbox_device.ip_address} will be checked.\nPress any key to continue or "s" to skip...'
-                # )
-
-                # if decision.strip().lower() == "s":
-                #     logger.info(
-                #         f'Device {netbox_device.ip_address} was skipped')
-                #     continue
+                if script_configuration['pause_before_proccessing']:
+                    ### Прерывание цикла перед каждым устройством
+                    decision = input(
+                        f'\n{netbox_device.ip_address} will be checked.\nPress any key to continue or "s" to skip...'
+                    )
+                    if decision.strip().lower() == "s":
+                        logger.info(
+                            f'Device {netbox_device.ip_address} was skipped')
+                        continue
 
                 switch = Switch(netbox_device.ip_address,
                                 netbox_device.role.model)
-                switch.interfaces = netbox_device.get_interfaces()
+                switch.interfaces = netbox_device.get_interfaces(host_interface.link_peers[0].name) # чтобы получить все интерфейсы устройства - вызываем метод get_interfaces без параметра
+                switch.site_slug = netbox_device.site.slug
 
                 # Динамический импорт требуемого модуля
                 spec = importlib.util.spec_from_file_location(
-                    "dyn_module", os.path.join(cwd, "tasks", switch.model_family, module_name))
+                    "dyn_module", os.path.join(cwd, "tasks", switch.model_family, module_name)
+                )
                 dyn_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(dyn_module)
-                dyn_module.main(switch.ssh)
+                dyn_module.main(switch, host_interface) # передай что нужно в свой модуль
 
                 switch.save()
                 switch.ssh.close()

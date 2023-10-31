@@ -40,15 +40,38 @@ class NetboxDevice:
             raise e
 
     @classmethod
-    def get_devices(cls, site_slug, role):
+    def get_devices_by_role(cls, site_slug, role):
         try:
             devices = cls.__netbox_connection.dcim.devices.filter(site=site_slug, role_id=role)
             logger.debug(f"Found {len(devices)} devices for site {site_slug}")
-            return devices
+            return {device: None for device in devices}
         except pynetbox.core.query.RequestError as e:
             error_message = f"Request failed for site {site_slug}"
             calling_function = inspect.stack()[1].function
             raise Error(error_message, site_slug, calling_function)
+    
+    @classmethod
+    def get_interfaces_by_hosts(cls, ip_list):
+        netbox_devices_and_interfaces = {}
+        for ip in ip_list:
+            logger.info(f"Getting info for host {ip}")
+            # Получаем объект ip-адреса из netbox
+            netbox_ip = cls.__netbox_connection.ipam.ip_addresses.get(address=ip)
+            if not netbox_ip:
+                NonCriticalError(f"IP {ip} not found in NetBox", ip)
+                continue
+            # Получаем объект интерфейса, ассоциированного с ip-адресом
+            netbox_interface = cls.__netbox_connection.dcim.interfaces.get(id=netbox_ip.assigned_object.id)
+            if len(netbox_interface.link_peers) == 0:
+                NonCriticalError(f"IP {ip} has no link peers", ip)
+                continue
+            # Получаем объект устройства, которому принадлежит интерфейс
+            netbox_device = cls.__netbox_connection.dcim.devices.get(
+                id=netbox_interface.link_peers[0].device.id
+            )
+            # Вносим информацию в словарь
+            netbox_devices_and_interfaces[netbox_device] = netbox_interface
+        return netbox_devices_and_interfaces
     
     # # Получение вланов сайта из netbox
     # @classmethod
@@ -71,8 +94,13 @@ class NetboxDevice:
         self.__netbox_device = device
         self.ip_address = device.primary_ip.address.split('/')[0]
         self.role = device.device_type
+        self.site = device.site
 
-    def get_interfaces(self):
+    def get_interfaces(self, name=None):
+        if name:
+            return self.__netbox_connection.dcim.interfaces.get(
+                device=self.__netbox_device.name, name=name
+            )
         return self.__netbox_connection.dcim.interfaces.filter(
             device=self.__netbox_device.name
         )
