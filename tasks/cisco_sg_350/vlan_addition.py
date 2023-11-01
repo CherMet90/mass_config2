@@ -1,7 +1,7 @@
 import jinja2
 from main import ModuleVariables
 
-def main(ssh):
+def main(switch):
     # Объявление окружения Jinja и загрузка шаблонов
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader('tasks/cisco_sg_350/config_templets'),
@@ -18,7 +18,7 @@ def main(ssh):
     vlan_id = set_module_variable('vlan_id')
     vlan_name = set_module_variable('vlan_name')
 
-    ssh.sendline(template.render(vlan_id=vlan_id, vlan_name=vlan_name))
-    ssh.expect(['#'])
-    ssh.sendline('end')
-    ssh.expect(['#end'])
+    switch.ssh.sendline(template.render(vlan_id=vlan_id, vlan_name=vlan_name))
+    switch.ssh.expect(['#'])
+    switch.ssh.sendline('end')
+    switch.ssh.expect(['#end'])

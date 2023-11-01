@@ -1,7 +1,7 @@
 import jinja2
 from main import ModuleVariables
 
-def main(ssh):
+def main(switch):
     # Define Jinja environment and load templates
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader('tasks/cisco_catalyst/config_templets'),
@@ -18,6 +18,6 @@ def main(ssh):
     vlan_id = set_module_variable('vlan_id')
     vlan_name = set_module_variable('vlan_name')
 
-    ssh.expect('#')
-    ssh.sendline(template.render(vlan_id=vlan_id, vlan_name=vlan_name))
-    ssh.expect(['#end'])
+    switch.ssh.expect('#')
+    switch.ssh.sendline(template.render(vlan_id=vlan_id, vlan_name=vlan_name))
+    switch.ssh.expect(['#end'])

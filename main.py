@@ -166,10 +166,14 @@ if __name__ == '__main__':
     
     # Глобальная конфигурация скрипта
     script_configuration = {
-        'searching_by_what': 'hosts',
-        'pause_before_proccessing': False,
-        'use_ip_list': True,
+        'searching_by_what': 'role',
+        'use_ip_list': False,
+        'get_interfaces': 'all',
     }
+    print('--- Configuration ---')
+    for key, value in script_configuration.items():
+        print(f'{key}: {value}')
+    input('Correct?')
     
     try:
         if script_configuration['use_ip_list']:
@@ -195,28 +199,22 @@ if __name__ == '__main__':
         Switch.set_login()
         Switch.set_password()
 
-        ### Запуск цикла если netbox_devices содержит список
-        # for netbox_device in netbox_devices:
-        ### Запуск цикла если netbox_devices содержит словарь
+        first_iteration = True
         for key, value in netbox_devices.items():
             try:
                 netbox_device = NetboxDevice(key)
                 host_interface = value
 
-                if script_configuration['pause_before_proccessing']:
-                    ### Прерывание цикла перед каждым устройством
-                    decision = input(
-                        f'\n{netbox_device.ip_address} will be checked.\nPress any key to continue or "s" to skip...'
-                    )
-                    if decision.strip().lower() == "s":
-                        logger.info(
-                            f'Device {netbox_device.ip_address} was skipped')
-                        continue
-
                 switch = Switch(netbox_device.ip_address,
                                 netbox_device.role.model)
-                switch.interfaces = netbox_device.get_interfaces(host_interface.link_peers[0].name) # чтобы получить все интерфейсы устройства - вызываем метод get_interfaces без параметра
                 switch.site_slug = netbox_device.site.slug
+                
+                # Получение интерфейсов
+                match script_configuration['get_interfaces']:
+                    case 'all':
+                        switch.interfaces = netbox_device.get_interfaces()
+                    case 'by_neighbor_name':
+                        switch.interfaces = netbox_device.get_interfaces(host_interface.link_peers[0].name)
 
                 # Динамический импорт требуемого модуля
                 spec = importlib.util.spec_from_file_location(
@@ -224,12 +222,17 @@ if __name__ == '__main__':
                 )
                 dyn_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(dyn_module)
-                dyn_module.main(switch, host_interface) # передай что нужно в свой модуль
+                dyn_module.main(switch)
 
                 switch.save()
                 switch.ssh.close()
                 print('')
                 logger.info(f'The connection closed')
+                
+                if first_iteration:
+                    input(f'\nContinue?')
+                    first_iteration = False
+
             except Error:
                 continue
     except Error as e:

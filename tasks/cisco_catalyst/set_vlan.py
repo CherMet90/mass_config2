@@ -2,7 +2,7 @@ import jinja2
 
 from errors import Error, NonCriticalError
 
-def main(switch, host_interface):
+def main(switch):
     # Define Jinja environment and load templates
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader('tasks/cisco_catalyst/config_templets'),
