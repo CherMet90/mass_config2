@@ -6,6 +6,7 @@ import os
 
 import jinja2
 import pexpect
+import yaml
 
 from netbox import NetboxDevice
 from errors import Error, NonCriticalError
@@ -146,30 +147,20 @@ class Switch:
 
 if __name__ == '__main__':
     cwd = os.getcwd()   # Get the current working directory
-    
-    NETBOX_DEVICE_ROLE = {
-        'router': 1,
-        'ap': 2,
-        'wlan-controller': 3,
-        'access-switch': 4,
-        'poe-switch': 5,
-        'aggregation-switch': 6,
-        'l3-switch': 7,
-        'server-switch': 8,
-        'bench-equipment': 9,
-        'asu-switch': 10,
-        'host': 11
-    }
+
     module_name = input(
         "Enter module name (with file extension): "
     )
     
-    # Глобальная конфигурация скрипта
-    script_configuration = {
-        'searching_by_what': 'role',
-        'use_ip_list': False,
-        'get_interfaces': 'all',
-    }
+    # Загрузка конфигурации скрипта
+    with open("config.yaml", 'r') as stream:
+        try:
+            configs = yaml.safe_load(stream)
+            NETBOX_DEVICE_ROLE = configs['NETBOX_DEVICE_ROLE']
+            script_configuration = configs['script_configuration']
+        except yaml.YAMLError as exc:
+            print(exc)
+
     print('--- Configuration ---')
     for key, value in script_configuration.items():
         print(f'{key}: {value}')
@@ -214,7 +205,7 @@ if __name__ == '__main__':
                     case 'all':
                         switch.interfaces = netbox_device.get_interfaces()
                     case 'by_neighbor_name':
-                        switch.interfaces = netbox_device.get_interfaces(host_interface.link_peers[0].name)
+                        switch.interfaces = netbox_device.get_interfaces(host_interface.connected_endpoints[0].name)
 
                 # Динамический импорт требуемого модуля
                 spec = importlib.util.spec_from_file_location(

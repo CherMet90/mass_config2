@@ -61,13 +61,16 @@ class NetboxDevice:
                 NonCriticalError(f"IP {ip} not found in NetBox", ip)
                 continue
             # Получаем объект интерфейса, ассоциированного с ip-адресом
+            if not netbox_ip.assigned_object:
+                NonCriticalError(f'IP {ip} has no assigned object', ip)
+                continue
             netbox_interface = cls.__netbox_connection.dcim.interfaces.get(id=netbox_ip.assigned_object.id)
             if len(netbox_interface.link_peers) == 0:
                 NonCriticalError(f"IP {ip} has no link peers", ip)
                 continue
             # Получаем объект устройства, которому принадлежит интерфейс
             netbox_device = cls.__netbox_connection.dcim.devices.get(
-                id=netbox_interface.link_peers[0].device.id
+                id=netbox_interface.connected_endpoints[0].device.id
             )
             # Вносим информацию в словарь
             netbox_devices_and_interfaces[netbox_device] = netbox_interface

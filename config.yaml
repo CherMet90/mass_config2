@@ -1,0 +1,17 @@
+script_configuration:
+  searching_by_what: 'hosts'
+  use_ip_list: True
+  get_interfaces: 'by_neighbor_name'
+
+NETBOX_DEVICE_ROLE:
+  router: 1
+  ap: 2
+  wlan-controller: 3
+  access-switch: 4
+  poe-switch: 5
+  aggregation-switch: 6
+  l3-switch: 7
+  server-switch: 8
+  bench-equipment: 9
+  asu-switch: 10
+  host: 11
