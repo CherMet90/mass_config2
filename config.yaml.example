@@ -1,0 +1,8 @@
+script_configuration:
+  searching_by_what: 'role'
+  use_ip_list: False
+  get_interfaces: 'all'
+
+NETBOX_DEVICE_ROLE:
+  router: 1
+  ap: 2

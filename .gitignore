@@ -1,3 +1,4 @@
 NetBox.log
 *.pyc
 ip.list
+config.yaml
